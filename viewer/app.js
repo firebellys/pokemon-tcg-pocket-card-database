@@ -37,6 +37,7 @@
   /* ---------- State ---------- */
   const state = {
     search: "",
+    keywords: [],
     element: "",
     type: "",
     subtype: "",
@@ -60,23 +61,34 @@
     });
   }
 
-  function hl(text) {
-    const q = state.search.trim();
-    if (!q) return esc(text);
-    const lower = String(text).toLowerCase();
-    const ql = q.toLowerCase();
-    let out = "";
-    let i = 0;
-    while (true) {
-      const idx = lower.indexOf(ql, i);
-      if (idx === -1) {
-        out += esc(String(text).slice(i));
-        break;
-      }
-      out += esc(String(text).slice(i, idx));
-      out += "<mark>" + esc(String(text).slice(idx, idx + q.length)) + "</mark>";
-      i = idx + q.length;
+  function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function tokenize(query) {
+    const tokens = [];
+    const re = /"([^"]+)"|'([^']+)'|(\S+)/g;
+    let m;
+    while ((m = re.exec(query))) {
+      tokens.push((m[1] || m[2] || m[3] || "").toLowerCase());
     }
+    return tokens.filter(Boolean);
+  }
+
+  function hl(text) {
+    const keywords = state.keywords;
+    if (!keywords.length) return esc(text);
+    const re = new RegExp("(" + keywords.map(escapeRegExp).join("|") + ")", "gi");
+    const str = String(text);
+    let out = "";
+    let last = 0;
+    let m;
+    while ((m = re.exec(str)) !== null) {
+      out += esc(str.slice(last, m.index)) + "<mark>" + esc(m[0]) + "</mark>";
+      last = m.index + m[0].length;
+      if (m.index === re.lastIndex) re.lastIndex += 1;
+    }
+    out += esc(str.slice(last));
     return out;
   }
 
@@ -156,7 +168,7 @@
 
   /* ---------- Matching ---------- */
   function matches(card) {
-    if (state.search && card._search.indexOf(state.search) === -1) return false;
+    if (state.keywords.length && !state.keywords.every(function (k) { return card._search.indexOf(k) !== -1; })) return false;
 
     if (state.element) {
       if (state.element === "__none__" ? card.element !== null : card.element !== state.element) return false;
@@ -305,6 +317,7 @@
 
     search.addEventListener("input", function () {
       state.search = search.value.trim().toLowerCase();
+      state.keywords = tokenize(state.search);
       clear.classList.toggle("visible", search.value.length > 0);
       state.visible = 200;
       render();
@@ -313,6 +326,7 @@
     clear.addEventListener("click", function () {
       search.value = "";
       state.search = "";
+      state.keywords = [];
       clear.classList.remove("visible");
       state.visible = 200;
       render();
@@ -370,6 +384,7 @@
     document.getElementById("reset-filters").addEventListener("click", function () {
       search.value = "";
       state.search = "";
+      state.keywords = [];
       state.element = state.type = state.subtype = state.rarity = "";
       state.set = state.pack = state.weakness = state.retreat = "";
       state.hpMin = state.hpMax = null;
